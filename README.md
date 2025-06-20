@@ -55,11 +55,14 @@ docker restart <prometheus-container-name>
 ## Metrics
 | Metric Name | Description |
 |------------|-------------|
-| `ollama_requests_total` | Total number of requests per model |
-| `ollama_response_seconds` | Response time in seconds |
-| `ollama_tokens_generated_total` | Number of tokens generated |
-| `ollama_eval_total` | Number of evaluation steps |
-| `ollama_load_time_seconds` | Time taken to load models |
+| `ollama_requests_total` | Total chat requests |
+| `ollama_response_seconds` | Total time spent for the response |
+| `ollama_load_duration_seconds` | Time spent loading the model |
+| `ollama_prompt_eval_duration_seconds` | Time spent evaluating prompt |
+| `ollama_tokens_processed_total` | Number of tokens in the prompt |
+| `ollama_eval_duration_seconds` | Time spent generating the response |
+| `ollama_tokens_generated_total` | Number of tokens in the response |
+| `ollama_tokens_per_second` | Tokens generated per second |
 
 ## Grafana Integration
 1. Open **Grafana**.
@@ -72,8 +75,9 @@ docker restart <prometheus-container-name>
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/metrics` | GET | Exposes Prometheus metrics |
-| `/api/generate` | POST | Proxies requests to Ollama and logs metrics |
-| `/api/tags` | GET | Lists available models |
+| `/api/chat` | POST | Proxies requests to Ollama and logs metrics |
+
+All other endpoints are proxied to the Ollama API.
 
 ## License
 There is no spoon.
