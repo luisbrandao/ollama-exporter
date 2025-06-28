@@ -5,10 +5,11 @@ This is a **Prometheus Exporter** for **Ollama**, designed to monitor request st
 ## Features
 - **Tracks requests per model** (`ollama_requests_total`)
 - **Measures response time** (`ollama_response_seconds`)
-- **Monitors token usage** (`ollama_tokens_generated_total`)
-- **Records evaluation steps** (`ollama_eval_total`)
-- **Tracks model load times** (`ollama_load_time_seconds`)
-- **Exposes `/api/tags` to list available models**
+- **Records model load times** (`ollama_load_duration_seconds`)
+- **Tracks evaluation durations** (`ollama_prompt_eval_duration_seconds` and `ollama_eval_duration_seconds`)
+- **Monitors token usage** (`ollama_tokens_processed_total` and `ollama_tokens_generated_total`)
+- **Measures token generation rate** (`ollama_tokens_per_second`)
+- **Transparent proxy** for all non-chat Ollama API endpoints
 
 ## Installation
 
@@ -55,12 +56,12 @@ docker restart <prometheus-container-name>
 ## Metrics
 | Metric Name | Description |
 |------------|-------------|
-| `ollama_requests_total` | Total chat requests |
+| `ollama_requests_total` | Total chat and generate requests |
 | `ollama_response_seconds` | Total time spent for the response |
 | `ollama_load_duration_seconds` | Time spent loading the model |
 | `ollama_prompt_eval_duration_seconds` | Time spent evaluating prompt |
-| `ollama_tokens_processed_total` | Number of tokens in the prompt |
 | `ollama_eval_duration_seconds` | Time spent generating the response |
+| `ollama_tokens_processed_total` | Number of tokens in the prompt |
 | `ollama_tokens_generated_total` | Number of tokens in the response |
 | `ollama_tokens_per_second` | Tokens generated per second |
 
@@ -76,6 +77,7 @@ docker restart <prometheus-container-name>
 |----------|--------|-------------|
 | `/metrics` | GET | Exposes Prometheus metrics |
 | `/api/chat` | POST | Proxies requests to Ollama and logs metrics |
+| `/api/generate` | POST | Proxies requests to Ollama and logs metrics |
 
 All other endpoints are proxied to the Ollama API.
 
