@@ -29,7 +29,14 @@ OLLAMA_EVAL_DURATION =        Histogram("ollama_eval_duration_seconds", "Time sp
 OLLAMA_PROMPT_EVAL_COUNT = Counter("ollama_tokens_processed_total", "Number of tokens in the prompt", ["model"])
 OLLAMA_EVAL_COUNT =        Counter("ollama_tokens_generated_total", "Number of tokens in the response", ["model"])
 
-OLLAMA_TOKENS_PER_SECOND = Histogram("ollama_tokens_per_second", "Tokens generated per second", ["model"])
+OLLAMA_TOKENS_PER_SECOND = Histogram(
+    "ollama_tokens_per_second",
+    "Tokens generated per second",
+    ["model"],
+    # Use buckets with suitable ranges for tokens/s measurements
+    buckets=[5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+)
+
 
 def extract_and_record_metrics(response_data, model):
     """Extract and record metrics from Ollama response data."""
