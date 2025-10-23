@@ -12,7 +12,11 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 # Configurable Ollama host (via env variable or defaults to localhost)
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
-logging.basicConfig()
+# Configure logging with timestamp
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
@@ -90,6 +94,13 @@ async def chat_with_metrics(request: Request):
     body = await request.json()
     model = body.get("model", "unknown")
     # logger.debug(f"Chat request body: {json.dumps(body, indent=4)}")
+    prompt = body.get("prompt")
+    messages = body.get("messages")
+    if logger.isEnabledFor(logging.DEBUG):
+        if prompt:
+            logger.debug(f"Model: {model}, Received prompt: {prompt}")
+        if messages:
+            logger.debug(f"Model: {model}, Received messages: {messages}")
     is_streaming = body.get("stream", False)
 
     headers = dict(request.headers)
@@ -133,6 +144,8 @@ async def chat_with_metrics(request: Request):
                     # Extract metrics from the final chunk if available
                     if final_chunk_data:
                         extract_and_record_metrics(final_chunk_data, model)
+
+                    logger.debug(f"Model: {model}, Finished request")
 
         return StreamingResponse(generate_stream(), media_type="application/json")
     else:
@@ -181,7 +194,15 @@ async def verify_ollama_connection():
 
 async def main():
     await verify_ollama_connection()
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+    
+    # Configure uvicorn logging format with timestamp
+    log_config = uvicorn.config.LOGGING_CONFIG
+    log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(levelprefix)s %(client_addr)s - \"%(request_line)s\" %(status_code)s"
+    log_config["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    log_config["formatters"]["default"]["fmt"] = "%(asctime)s - %(levelprefix)s %(message)s"
+    log_config["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info", log_config=log_config)
     server = uvicorn.Server(config)
     await server.serve()
 
