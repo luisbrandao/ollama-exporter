@@ -38,7 +38,7 @@ OLLAMA_TOKENS_PER_SECOND = Histogram(
 )
 
 
-def extract_and_record_metrics(response_data, model):
+def extract_and_record_metrics(response_data, model, num_ctx=None):
     """Extract and record metrics from Ollama response data."""
     if not isinstance(response_data, dict):
         return
@@ -80,14 +80,20 @@ def extract_and_record_metrics(response_data, model):
     
     # Log token usage summary with generation time
     if prompt_eval_count > 0 or eval_count > 0:
+        ctx_info = f", Ctx: {num_ctx}" if num_ctx else ""
         if eval_duration > 0:
             total_seconds = eval_duration / 1_000_000_000
             minutes, seconds = divmod(int(total_seconds), 60)
             hours, minutes = divmod(minutes, 60)
             time_str = f"{hours}:{minutes:02d}:{seconds:02d}"
-            logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}, Time: {time_str}")
+            # Calculate tokens per second
+            tps_info = ""
+            if eval_count > 0:
+                tps = eval_count / eval_duration * 1_000_000_000
+                tps_info = f", Speed: {tps:.2f} t/s"
+            logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}{ctx_info}, Time: {time_str}{tps_info}")
         else:
-            logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}")
+            logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}{ctx_info}")
 
 @app.get("/metrics")
 def metrics():
@@ -100,6 +106,9 @@ async def chat_with_metrics(request: Request):
     """Handle chat and generate requests with streaming support and metrics extraction."""
     body = await request.json()
     model = body.get("model", "unknown")
+    # Extract num_ctx from options if present
+    options = body.get("options", {})
+    num_ctx = options.get("num_ctx") if isinstance(options, dict) else None
     # logger.debug(f"Chat request body: {json.dumps(body, indent=4)}")
     prompt = body.get("prompt")
     messages = body.get("messages")
@@ -150,7 +159,7 @@ async def chat_with_metrics(request: Request):
 
                     # Extract metrics from the final chunk if available
                     if final_chunk_data:
-                        extract_and_record_metrics(final_chunk_data, model)
+                        extract_and_record_metrics(final_chunk_data, model, num_ctx)
 
                     logger.debug(f"Model: {model}, Finished request")
 
@@ -163,7 +172,7 @@ async def chat_with_metrics(request: Request):
             if response.status_code == 200:
                 try:
                     response_data = response.json()
-                    extract_and_record_metrics(response_data, model)
+                    extract_and_record_metrics(response_data, model, num_ctx)
                 except (json.JSONDecodeError, TypeError):
                     pass
 
