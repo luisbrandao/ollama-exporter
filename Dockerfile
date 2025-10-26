@@ -5,10 +5,11 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy required files
+COPY log_config.yaml .
 COPY ollama_exporter.py .
 
 # Install dependencies
-RUN pip install fastapi uvicorn prometheus_client httpx
+RUN pip install fastapi uvicorn prometheus_client httpx pyyaml
 
 # Expose the metrics port
 EXPOSE 8000
@@ -17,4 +18,4 @@ EXPOSE 8000
 ENV OLLAMA_HOST="http://localhost:11434"
 
 # Start the FastAPI app
-CMD ["uvicorn", "ollama_exporter:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "ollama_exporter:app", "--host", "0.0.0.0", "--port", "8000", "--log-config", "log_config.yaml"]

@@ -12,11 +12,7 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 # Configurable Ollama host (via env variable or defaults to localhost)
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
-# Configure logging with timestamp
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+logging.basicConfig()
 logger = logging.getLogger(__name__)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
@@ -81,6 +77,17 @@ def extract_and_record_metrics(response_data, model):
         tps = eval_count / eval_duration * 1_000_000_000
         OLLAMA_TOKENS_PER_SECOND.labels(model=model).observe(tps)
         logger.debug(f"Model: {model}, Tokens per Second: {tps:.2f}")
+    
+    # Log token usage summary with generation time
+    if prompt_eval_count > 0 or eval_count > 0:
+        if eval_duration > 0:
+            total_seconds = eval_duration / 1_000_000_000
+            minutes, seconds = divmod(int(total_seconds), 60)
+            hours, minutes = divmod(minutes, 60)
+            time_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+            logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}, Time: {time_str}")
+        else:
+            logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}")
 
 @app.get("/metrics")
 def metrics():
@@ -194,15 +201,7 @@ async def verify_ollama_connection():
 
 async def main():
     await verify_ollama_connection()
-    
-    # Configure uvicorn logging format with timestamp
-    log_config = uvicorn.config.LOGGING_CONFIG
-    log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(levelprefix)s %(client_addr)s - \"%(request_line)s\" %(status_code)s"
-    log_config["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
-    log_config["formatters"]["default"]["fmt"] = "%(asctime)s - %(levelprefix)s %(message)s"
-    log_config["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
-    
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info", log_config=log_config)
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
     server = uvicorn.Server(config)
     await server.serve()
 
