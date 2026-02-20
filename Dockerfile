@@ -17,5 +17,8 @@ EXPOSE 8000
 # Define runtime environment variable for Ollama host (can be overridden)
 ENV OLLAMA_HOST="http://localhost:11434"
 
+# Set timezone to America/Sao_Paulo
+ENV TZ="America/Sao_Paulo"
+
 # Start the FastAPI app
 CMD ["uvicorn", "ollama_exporter:app", "--host", "0.0.0.0", "--port", "8000", "--log-config", "log_config.yaml"]

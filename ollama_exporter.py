@@ -95,6 +95,28 @@ def extract_and_record_metrics(response_data, model, num_ctx=None):
         else:
             logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}{ctx_info}")
 
+
+def extract_openai_metrics(response_data, model):
+    """Extract and record metrics from OpenAI-compatible response data."""
+    if not isinstance(response_data, dict):
+        return
+
+    usage = response_data.get("usage", {})
+    if not usage:
+        return
+
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+
+    if prompt_tokens > 0:
+        OLLAMA_PROMPT_EVAL_COUNT.labels(model=model).inc(prompt_tokens)
+    if completion_tokens > 0:
+        OLLAMA_EVAL_COUNT.labels(model=model).inc(completion_tokens)
+
+    if prompt_tokens > 0 or completion_tokens > 0:
+        logger.info(f"Tokens - Model: {model}, In: {prompt_tokens}, Out: {completion_tokens}")
+
+
 @app.get("/metrics")
 def metrics():
     """Expose Prometheus metrics."""
@@ -173,6 +195,65 @@ async def chat_with_metrics(request: Request):
                 try:
                     response_data = response.json()
                     extract_and_record_metrics(response_data, model, num_ctx)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            return Response(content=response.content, status_code=response.status_code, headers=dict(response.headers))
+
+@app.post("/v1/chat/completions")
+async def openai_chat_with_metrics(request: Request):
+    """Handle OpenAI-compatible chat/completions requests with metrics extraction."""
+    body = await request.json()
+    model = body.get("model", "unknown")
+    messages = body.get("messages")
+    if logger.isEnabledFor(logging.DEBUG) and messages:
+        logger.debug(f"Model: {model}, Received messages: {messages}")
+    is_streaming = body.get("stream", False)
+
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    headers.pop("content-length", None)
+    headers.pop("content-type", None)
+
+    OLLAMA_CHAT_REQUEST_COUNT.labels(model=model).inc()
+
+    if is_streaming:
+        async def generate_stream():
+            usage_data = None
+            async with httpx.AsyncClient(timeout=httpx.Timeout(900.0, read=900.0)) as client:
+                async with client.stream("POST", f"{OLLAMA_HOST}/v1/chat/completions", headers=headers, json=body, params=request.query_params) as response:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+
+                        # Parse SSE chunks to find usage data
+                        if chunk:
+                            try:
+                                chunk_text = chunk.decode('utf-8')
+                                for line in chunk_text.strip().split('\n'):
+                                    line = line.strip()
+                                    if line.startswith('data: ') and line != 'data: [DONE]':
+                                        try:
+                                            chunk_json = json.loads(line[6:])
+                                            if "usage" in chunk_json and chunk_json["usage"]:
+                                                usage_data = chunk_json
+                                        except json.JSONDecodeError:
+                                            continue
+                            except UnicodeDecodeError:
+                                pass
+
+            if usage_data:
+                extract_openai_metrics(usage_data, model)
+            logger.debug(f"Model: {model}, Finished request")
+
+        return StreamingResponse(generate_stream(), media_type="text/event-stream")
+    else:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(900.0, read=900.0)) as client:
+            response = await client.post(f"{OLLAMA_HOST}/v1/chat/completions", headers=headers, json=body, params=request.query_params)
+
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    extract_openai_metrics(response_data, model)
                 except (json.JSONDecodeError, TypeError):
                     pass
 
