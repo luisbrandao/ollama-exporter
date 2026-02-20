@@ -218,6 +218,12 @@ async def openai_chat_with_metrics(request: Request):
     OLLAMA_CHAT_REQUEST_COUNT.labels(model=model).inc()
 
     if is_streaming:
+        # Inject stream_options to request usage data in the final SSE chunk
+        if "stream_options" not in body:
+            body["stream_options"] = {"include_usage": True}
+        elif isinstance(body["stream_options"], dict):
+            body["stream_options"]["include_usage"] = True
+
         async def generate_stream():
             usage_data = None
             async with httpx.AsyncClient(timeout=httpx.Timeout(900.0, read=900.0)) as client:
@@ -254,8 +260,8 @@ async def openai_chat_with_metrics(request: Request):
                 try:
                     response_data = response.json()
                     extract_openai_metrics(response_data, model)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning(f"Failed to parse OpenAI response: {e}")
 
             return Response(content=response.content, status_code=response.status_code, headers=dict(response.headers))
 
