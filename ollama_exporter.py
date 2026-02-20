@@ -97,7 +97,7 @@ def extract_and_record_metrics(response_data, model, num_ctx=None):
             logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}{ctx_info}")
 
 
-def extract_openai_metrics(response_data, model, elapsed_seconds=None):
+def extract_openai_metrics(response_data, model, elapsed_seconds=None, num_ctx=None):
     """Extract and record metrics from OpenAI-compatible response data."""
     if not isinstance(response_data, dict):
         return
@@ -115,6 +115,7 @@ def extract_openai_metrics(response_data, model, elapsed_seconds=None):
         OLLAMA_EVAL_COUNT.labels(model=model).inc(completion_tokens)
 
     if prompt_tokens > 0 or completion_tokens > 0:
+        ctx_info = f", Ctx: {num_ctx}" if num_ctx else ""
         time_info = ""
         if elapsed_seconds and elapsed_seconds > 0:
             minutes, seconds = divmod(int(elapsed_seconds), 60)
@@ -123,7 +124,7 @@ def extract_openai_metrics(response_data, model, elapsed_seconds=None):
             if completion_tokens > 0:
                 tps = completion_tokens / elapsed_seconds
                 time_info += f", Speed: {tps:.2f} t/s"
-        logger.info(f"Tokens - Model: {model}, In: {prompt_tokens}, Out: {completion_tokens}{time_info}")
+        logger.info(f"Tokens - Model: {model}, In: {prompt_tokens}, Out: {completion_tokens}{ctx_info}{time_info}")
 
 
 @app.get("/metrics")
@@ -214,6 +215,9 @@ async def openai_chat_with_metrics(request: Request):
     """Handle OpenAI-compatible chat/completions requests with metrics extraction."""
     body = await request.json()
     model = body.get("model", "unknown")
+    # Extract num_ctx from options if present
+    options = body.get("options", {})
+    num_ctx = options.get("num_ctx") if isinstance(options, dict) else None
     messages = body.get("messages")
     if logger.isEnabledFor(logging.DEBUG) and messages:
         logger.debug(f"Model: {model}, Received messages: {messages}")
@@ -259,7 +263,7 @@ async def openai_chat_with_metrics(request: Request):
 
             elapsed = time.monotonic() - start_time
             if usage_data:
-                extract_openai_metrics(usage_data, model, elapsed)
+                extract_openai_metrics(usage_data, model, elapsed, num_ctx)
             logger.debug(f"Model: {model}, Finished request")
 
         return StreamingResponse(generate_stream(), media_type="text/event-stream")
@@ -272,7 +276,7 @@ async def openai_chat_with_metrics(request: Request):
             if response.status_code == 200:
                 try:
                     response_data = response.json()
-                    extract_openai_metrics(response_data, model, elapsed)
+                    extract_openai_metrics(response_data, model, elapsed, num_ctx)
                 except (json.JSONDecodeError, TypeError) as e:
                     logger.warning(f"Failed to parse OpenAI response: {e}")
 
