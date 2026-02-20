@@ -1,5 +1,6 @@
 import os
 import asyncio
+import time
 import httpx
 import json
 import logging
@@ -96,7 +97,7 @@ def extract_and_record_metrics(response_data, model, num_ctx=None):
             logger.info(f"Tokens - Model: {model}, In: {prompt_eval_count}, Out: {eval_count}{ctx_info}")
 
 
-def extract_openai_metrics(response_data, model):
+def extract_openai_metrics(response_data, model, elapsed_seconds=None):
     """Extract and record metrics from OpenAI-compatible response data."""
     if not isinstance(response_data, dict):
         return
@@ -114,7 +115,15 @@ def extract_openai_metrics(response_data, model):
         OLLAMA_EVAL_COUNT.labels(model=model).inc(completion_tokens)
 
     if prompt_tokens > 0 or completion_tokens > 0:
-        logger.info(f"Tokens - Model: {model}, In: {prompt_tokens}, Out: {completion_tokens}")
+        time_info = ""
+        if elapsed_seconds and elapsed_seconds > 0:
+            minutes, seconds = divmod(int(elapsed_seconds), 60)
+            hours, minutes = divmod(minutes, 60)
+            time_info = f", Time: {hours}:{minutes:02d}:{seconds:02d}"
+            if completion_tokens > 0:
+                tps = completion_tokens / elapsed_seconds
+                time_info += f", Speed: {tps:.2f} t/s"
+        logger.info(f"Tokens - Model: {model}, In: {prompt_tokens}, Out: {completion_tokens}{time_info}")
 
 
 @app.get("/metrics")
@@ -226,6 +235,7 @@ async def openai_chat_with_metrics(request: Request):
 
         async def generate_stream():
             usage_data = None
+            start_time = time.monotonic()
             async with httpx.AsyncClient(timeout=httpx.Timeout(900.0, read=900.0)) as client:
                 async with client.stream("POST", f"{OLLAMA_HOST}/v1/chat/completions", headers=headers, json=body, params=request.query_params) as response:
                     async for chunk in response.aiter_bytes():
@@ -247,19 +257,22 @@ async def openai_chat_with_metrics(request: Request):
                             except UnicodeDecodeError:
                                 pass
 
+            elapsed = time.monotonic() - start_time
             if usage_data:
-                extract_openai_metrics(usage_data, model)
+                extract_openai_metrics(usage_data, model, elapsed)
             logger.debug(f"Model: {model}, Finished request")
 
         return StreamingResponse(generate_stream(), media_type="text/event-stream")
     else:
+        start_time = time.monotonic()
         async with httpx.AsyncClient(timeout=httpx.Timeout(900.0, read=900.0)) as client:
             response = await client.post(f"{OLLAMA_HOST}/v1/chat/completions", headers=headers, json=body, params=request.query_params)
+            elapsed = time.monotonic() - start_time
 
             if response.status_code == 200:
                 try:
                     response_data = response.json()
-                    extract_openai_metrics(response_data, model)
+                    extract_openai_metrics(response_data, model, elapsed)
                 except (json.JSONDecodeError, TypeError) as e:
                     logger.warning(f"Failed to parse OpenAI response: {e}")
 
