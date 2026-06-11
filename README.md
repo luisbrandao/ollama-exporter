@@ -1,3 +1,6 @@
+# Obsolete. https://github.com/luisbrandao/llm-proxy This does the same thing way better.
+
+
 # Ollama Prometheus Exporter
 
 A Prometheus exporter for Ollama that monitors request statistics, response times, token usage, and model performance. It runs as a FastAPI service and is Docker-ready.
